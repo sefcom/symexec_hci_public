@@ -4,6 +4,7 @@ from queue import Queue
 from typing import List, Optional, Type, Union, Callable, TYPE_CHECKING
 
 import angr
+import claripy
 from angr.block import Block
 from angr.analyses.disassembly import Instruction
 
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 
 
 class Instance:
+
     def __init__(self, project=None):
         # delayed import
         from ..ui.views.interaction_view import PlainTextProtocol, ProtocolInteractor, SavedInteraction
@@ -27,6 +29,7 @@ class Instance:
 
         self.jobs = []
         self._jobs_queue = Queue()
+        self.current_job = None
 
         self._project_container = ObjectContainer(project, "The current angr project")
         self._project_container.am_subscribe(self.initialize)
@@ -35,6 +38,7 @@ class Instance:
 
         self.register_container('simgrs', lambda: [], List[angr.SimulationManager], 'Global simulation managers list')
         self.register_container('states', lambda: [], List[angr.SimState], 'Global states list')
+        self.register_container('symbols', lambda: [], List[claripy.BV], 'Global symbols list')
         self.register_container('patches', lambda: None, None, 'Global patches update notifier') # dummy
         self.register_container('cfg_container', lambda: None, Optional[angr.knowledge_plugins.cfg.CFGModel], "The current CFG")
         self.register_container('cfb_container', lambda: None, Optional[angr.analyses.cfg.CFBlanket], "The current CFBlanket")
@@ -59,6 +63,7 @@ class Instance:
         self.img_name = None
 
         self.initialized = False
+        self._hook_code_strings = {}
 
     #
     # Properties
@@ -109,6 +114,10 @@ class Instance:
     def cfb(self, v):
         self.cfb_container.am_obj = v
         self.cfb_container.am_event()
+
+    @property
+    def hooked_addresses(self):
+        return list(self._hook_code_strings.keys())
 
     def __getattr__(self, k):
         try:
@@ -249,6 +258,28 @@ class Instance:
                     return insn_piece.render()[0]
         return None
 
+    def interrupt_current_job(self):
+        """Notify the current running job that the user requested an interrupt. The job may ignore it."""
+        # Due to thread scheduling, current_job reference *must* first be saved on the stack. Accessing self.current_job
+        # multiple times will lead to a race condition.
+        current_job = self.current_job
+        if current_job:
+            current_job.keyboard_interrupt()
+
+    def apply_hook(self, addr, hook_code_string):
+        self.project.unhook(addr)
+        # For the context of the exec call
+        p = self.project
+        # execute the hook definition provided by the user. This will register the hook with the project (as long as
+        # the user didn't delete the @project.hook decorator on the function)
+        exec(hook_code_string)
+        # Store the text of the hook so it could be retrieved later and modified
+        self._hook_code_strings[addr] = hook_code_string
+
+    def delete_hook(self, addr):
+        self.project.unhook(addr)
+        self._hook_code_strings.pop(addr)
+
     #
     # Private methods
     #
@@ -270,7 +301,9 @@ class Instance:
             gui_thread_schedule_async(self._set_status, args=("Working...",))
 
             try:
+                self.current_job = job
                 result = job.run(self)
+                self.current_job = None
             except Exception as e:
                 self.workspace.log('Exception while running job "%s":' % job.name)
                 self.workspace.log(e)

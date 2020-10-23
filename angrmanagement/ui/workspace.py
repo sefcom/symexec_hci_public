@@ -11,7 +11,7 @@ from ..config import Conf
 from ..data.instance import ObjectContainer
 from ..data.jobs import CodeTaggingJob, PrototypeFindingJob, VariableRecoveryJob
 from .views import (FunctionsView, DisassemblyView, SymexecView, StatesView, StringsView, ConsoleView, CodeView,
-                    InteractionView, SyncView, PatchesView, DependencyView, )
+                    InteractionView, SyncView, PatchesView, DependencyView, SymbolsView)
 from .widgets.qsmart_dockwidget import QSmartDockWidget
 from .view_manager import ViewManager
 
@@ -58,6 +58,7 @@ class Workspace:
             StringsView(self, 'center'),
             PatchesView(self, 'center'),
             InteractionView(self, 'center'),
+            SymbolsView(self,'center'),
             ConsoleView(self, 'bottom'),
         ]
 

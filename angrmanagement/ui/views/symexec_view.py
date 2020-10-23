@@ -58,6 +58,9 @@ class SymexecView(BaseView):
     def avoid_addr_in_exec(self, addr):
         self._simgrs.add_avoid_address(addr)
 
+    def find_addr_in_exec(self, addr):
+        self._simgrs.add_find_address(addr)
+
     def redraw_graph(self):
         if self.graph is not None:
             self.graph.viewport().update()
@@ -66,6 +69,12 @@ class SymexecView(BaseView):
         if self._selected_state_block:
             addr = self._selected_state_block.state.addr
             self._switch_to_disassembly_view(addr)
+
+    def select_states(self, states):
+        self._simgrs.select_states(states)
+
+    def select_states_that_passed_through(self, addr):
+        self._simgrs.select_states_that_passed_through(addr)
 
     #
     # Initialization

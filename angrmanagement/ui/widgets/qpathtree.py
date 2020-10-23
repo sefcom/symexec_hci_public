@@ -141,4 +141,6 @@ class QPathTree(QFrame):
         return g
 
     def _watch_simgr(self, **kwargs):
-        self.reload()
+        # TODO: hci: disabling the pathtree because it was broken and raising exceptions at the time I wrote this
+        # self.reload()
+        pass

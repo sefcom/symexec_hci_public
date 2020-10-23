@@ -51,13 +51,20 @@ class QStateBlock(QGraphicsItem):
     def _init_widgets(self):
 
         addr = None
-        if self.state.regs._ip.symbolic:
-            self._label_str = str(self.state.regs._ip)
-        else:
-            addr = self.state.regs._ip._model_concrete.value
+        if self.history.addr:
+            addr = self.history.addr
             self._label_str = "%#x" % addr
-        self._label_str = "State " + self._label_str
+        else:
+            try:
+                if self.state.regs._ip.symbolic:
+                    self._label_str = str(self.state.regs._ip)
+                else:
+                    addr = self.state.regs._ip._model_concrete.value
+                    self._label_str = "%#x" % addr
+            except ReferenceError:
+                self._label_str = "Unknown"
 
+        self._label_str = "State " + self._label_str
         self.addr = addr
 
         if addr is None:

@@ -24,7 +24,10 @@ class DisasmInsnContextMenu(Menu):
             ])
         self.entries.extend([
             MenuEntry('E&xecute symbolically...', self._popup_newstate_dialog),
-            MenuEntry('&Avoid in execution...', self._avoid_in_execution)
+            MenuEntry('&Avoid in execution...', self._avoid_in_execution),
+            MenuEntry('&Find in execution...', self._find_in_execution),
+            MenuEntry('Add/M&odify hook...', self._modify_assertion),
+            MenuEntry('F&unction strategy...', self._function_strategy)
         ])
 
     @property
@@ -37,7 +40,17 @@ class DisasmInsnContextMenu(Menu):
 
     def _toggle_instruction_selection(self): self._disasm_view.infodock.toggle_instruction_selection(self.insn_addr)
 
-    def _avoid_in_execution(self): self._disasm_view.avoid_addr_in_exec(self.insn_addr)
+    def _avoid_in_execution(self):
+        self._disasm_view.avoid_addr_in_exec(self.insn_addr)
+        self._disasm_view.refresh()
+
+    def _find_in_execution(self):
+        self._disasm_view.find_addr_in_exec(self.insn_addr)
+        self._disasm_view.refresh()
+
+    def _modify_assertion(self): self._disasm_view.popup_modify_hook_dialog(async_=True)
+
+    def _function_strategy(self): self._disasm_view.popup_function_strategy_dialog(async_=True)
 
     def _popup_xrefs(self):
         if self._disasm_view is None or self._disasm_view._flow_graph is None:

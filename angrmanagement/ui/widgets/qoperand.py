@@ -1,6 +1,6 @@
 import logging
 
-from PySide2.QtWidgets import QApplication
+from PySide2.QtWidgets import QApplication, QTableWidget, QDockWidget
 from PySide2.QtGui import QPainter, QColor
 from PySide2.QtCore import Qt, QRectF, QPointF
 
@@ -118,6 +118,8 @@ class QOperand(QCachedGraphicsItem):
             if selected:
                 # select the current instruction, too
                 self.infodock.select_instruction(self.insn.addr, insn_pos=QPointF(self.x(), self.y()), unique=True)
+        elif event.button() == Qt.MiddleButton:
+            self.workspace.plugins.handle_click_op(self)
         else:
             super().mousePressEvent(event)
 

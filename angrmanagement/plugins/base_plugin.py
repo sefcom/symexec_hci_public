@@ -7,6 +7,7 @@ from PySide2.QtWidgets import QGraphicsSceneMouseEvent
 from angrmanagement.ui.views import disassembly_view
 from angrmanagement.ui.widgets.qblock import QBlock
 from angrmanagement.ui.widgets.qinstruction import QInstruction
+from angrmanagement.ui.widgets.qoperand import QOperand
 
 _l = logging.getLogger(__name__)
 
@@ -96,4 +97,16 @@ class BasePlugin:
     URL_ACTIONS: List[str] = []
 
     def handle_url_action(self, action, kwargs):
+        pass   
+
+    def handle_click_op(self, qoperand: QOperand):
+        """See SampleViewer plugin for details"""
         pass
+
+    def pre_step_callback(self, simgr):
+        """See ExecutionStatisticsViewer plugin for details"""
+        return {}
+
+    def post_step_callback(self, simgr):
+        """See ExecutionStatisticsViewer plugin for details"""
+        return {}

@@ -1,10 +1,17 @@
 import logging
+from collections import defaultdict
 from typing import Optional, TYPE_CHECKING
 
-from PySide2.QtWidgets import QHBoxLayout, QVBoxLayout, QMenu, QApplication, QMessageBox
+from PySide2.QtWidgets import QHBoxLayout, QVBoxLayout, QMenu, QApplication, QMessageBox, QMainWindow, QWidget, \
+    QTableWidget, QDockWidget, QGraphicsSimpleTextItem
 from PySide2.QtCore import Qt, QSize
 
+import angr
+from angrmanagement.data.jobs import SimgrStepJob
+from ..widgets.qblock import QBlockAnnotations, QHookAnnotation, QFindAddrAnnotation, QAvoidAddrAnnotation
+
 from ...data.instance import ObjectContainer
+from ...logic import GlobalInfo
 from ...utils import locate_function
 from ...data.function_graph import FunctionGraph
 from ...logic.disassembly import JumpHistory, InfoDock
@@ -14,6 +21,8 @@ from ..dialogs.jumpto import JumpTo
 from ..dialogs.rename_label import RenameLabel
 from ..dialogs.set_comment import SetComment
 from ..dialogs.new_state import NewState
+from ..dialogs.hook import ShowHook
+from ..dialogs.strategy import ShowStrategy
 from ..dialogs.xref import XRef
 from ..menus.disasm_insn_context_menu import DisasmInsnContextMenu
 from ..menus.disasm_label_context_menu import DisasmLabelContextMenu
@@ -52,6 +61,8 @@ class DisassemblyView(BaseView):
         self._label_menu = None  # type: Optional[DisasmLabelContextMenu]
 
         self._insn_addr_on_context_menu = None
+
+        self._annotation_callbacks = []
 
         self._init_widgets()
         self._init_menus()
@@ -265,6 +276,31 @@ class DisassemblyView(BaseView):
             return
 
         dialog = NewState(self.workspace.instance, addr=addr, create_simgr=True, parent=self)
+        if async_:
+            dialog.show()
+        else:
+            dialog.exec_()
+
+    def popup_modify_hook_dialog(self, async_=True, addr=None):
+        if addr is None:
+            addr = self._address_in_selection()
+
+        if addr is None:
+            return
+
+        dialog = ShowHook(self.workspace.instance, addr=addr, parent=self)
+        if async_:
+            dialog.show()
+        else:
+            dialog.exec_()
+
+
+    def popup_function_strategy_dialog(self, async_=True):
+        addr = self._address_in_selection()
+        if addr is None:
+            return
+
+        dialog = ShowStrategy(self.workspace.instance, addr=addr)
         if async_:
             dialog.show()
         else:
@@ -498,6 +534,9 @@ class DisassemblyView(BaseView):
 
         self.workspace.view_manager.first_view_in_category('symexec').avoid_addr_in_exec(addr)
 
+    def find_addr_in_exec(self, addr):
+        self.workspace.view_manager.first_view_in_category('symexec').find_addr_in_exec(addr)
+
     def sizeHint(self):
         return QSize(800, 800)
 
@@ -505,9 +544,34 @@ class DisassemblyView(BaseView):
         if self._flow_graph.induction_variable_analysis:
             self._flow_graph.induction_variable_analysis = None
         else:
-            ana = self.workspace.instance.project.analyses.AffineRelationAnalysis(self._flow_graph._function_graph.function)
-            self._flow_graph.induction_variable_analysis = ana
+            try:
+                ana = self.workspace.instance.project.analyses.AffineRelationAnalysis(self._flow_graph._function_graph.function)
+                self._flow_graph.induction_variable_analysis = ana
+            except angr.errors.AngrNoPluginError:
+                _l.warning("Failed to find plugin AffineRelationAnalysis. Continuing. TODO: fix this")
+
         self._flow_graph.refresh()
+
+    def fetch_qblock_annotations(self, qblock):
+        addr_to_annotations = defaultdict(list)
+        for callback in self._annotation_callbacks:
+            for addr, annotations in callback(qblock).items():
+                addr_to_annotations[addr].extend(annotations)
+        for addr in qblock.addr_to_insns.keys():
+            if addr in self.workspace.instance.hooked_addresses:
+                hook_annotation = QHookAnnotation(self, addr)
+                addr_to_annotations[addr].append(hook_annotation)
+            qsimgrs = self.workspace.view_manager.first_view_in_category("symexec")._simgrs
+            if addr in qsimgrs.find_addrs:
+                addr_to_annotations[addr].append(QFindAddrAnnotation(self, qsimgrs, addr))
+            if addr in qsimgrs.avoid_addrs:
+                addr_to_annotations[addr].append(QAvoidAddrAnnotation(self, qsimgrs, addr))
+        return QBlockAnnotations(addr_to_annotations, parent=qblock)
+
+    def subscribe_annotation_callback(self, callback):
+        """Register a callback that creates inline instruction annotations to be displayed next to QBlocks in the
+        disassembly view"""
+        self._annotation_callbacks.append(callback)
 
     #
     # Initialization
@@ -535,7 +599,18 @@ class DisassemblyView(BaseView):
         hlayout = QHBoxLayout()
         hlayout.addLayout(vlayout)
 
-        self.setLayout(hlayout)
+        base = QWidget()
+        base.setLayout(hlayout)
+
+        main_window = QMainWindow()
+        main_window.setWindowFlags(Qt.Widget)
+        main_window.setCentralWidget(base)
+        self.main_window = main_window
+
+        main_layout = QHBoxLayout()
+        main_layout.addWidget(main_window)
+
+        self.setLayout(main_layout)
 
         self.display_disasm_graph()
         # self.display_linear_viewer()

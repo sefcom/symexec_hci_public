@@ -3,6 +3,7 @@ from .menu import Menu, MenuEntry, MenuSeparator
 
 
 class DisasmOptionsMenu(Menu):
+
     def __init__(self, disasm_view):
         super(DisasmOptionsMenu, self).__init__("", parent=disasm_view)
 
@@ -22,7 +23,6 @@ class DisasmOptionsMenu(Menu):
                                                       checkable=True,
                                                       checked=self.parent.show_exception_edges,
                                                       )
-
         self.entries.extend([
             self._smart_highlighting_action,
             self._show_address_action,

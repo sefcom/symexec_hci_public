@@ -1,10 +1,19 @@
 from PySide2.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, \
-    QGridLayout, QComboBox, \
-    QLineEdit, QTextEdit, QTreeWidget, QTreeWidgetItem
+    QGridLayout, QComboBox, QPlainTextEdit, \
+    QLineEdit, QTextEdit, QTreeWidget, QTreeWidgetItem, QMessageBox
 from PySide2.QtCore import Qt
+from PySide2.QtGui import QTextOption
 import angr
+import claripy
+import os
+
+import shlex
+import typing
+import logging
 
 from ..widgets import QAddressInput, QStateComboBox
+from .trace_state import TraceState
+from .fs_mount import FilesystemMount
 from ...utils.namegen import NameGenerator
 
 
@@ -13,6 +22,7 @@ class StateMetadata(angr.SimStatePlugin):
         super(StateMetadata, self).__init__()
         self.name = None                # the state's name
         self.base_name = None           # the name of the base state this was created from
+        self.merged_states = []
         self.is_original = False         # is this the original instanciation of this name?
         self.is_base = False             # is this state created with nothing else as a base?
 
@@ -24,8 +34,28 @@ class StateMetadata(angr.SimStatePlugin):
         c.is_base = False
         return c
 
+    def merge(self, others, merge_conditions, common_ancestor=None): # pylint: disable=unused-argument
+        self.merged_states.extend([o.name for o in others])
+        return True
+
 
 StateMetadata.register_default('gui_data')
+
+
+class SrcAddrAnnotation(claripy.Annotation):
+    def __init__(self, addr):
+        self.addr = addr
+
+    @property
+    def eliminatable(self):
+        return False
+
+    @property
+    def relocatable(self):
+        return True
+
+    def relocate(self, src, dst):
+        return self
 
 
 def is_option(o):
@@ -36,7 +66,7 @@ def is_option(o):
 
 
 class NewState(QDialog):
-    def __init__(self, instance, addr=None, create_simgr=False, parent=None):
+    def __init__(self, instance, addr=None, create_simgr=True, parent=None):
         super(NewState, self).__init__(parent)
 
         # initialization
@@ -50,8 +80,11 @@ class NewState(QDialog):
 
         self._name_edit = None  # type: QLineEdit
         self._base_state_combo = None  # type: QStateComboBox
+        self._address_box = None # type: QLineEdit
         self._mode_combo = None  # type: QComboBox
         self._editor = None  # type: QTextEdit
+        self._args = None # type: typing.List[str or claripy.BVS]
+        self._fs_config = None  # type: typing.List[(str,str)]
         self._ok_button = None
 
         self.setWindowTitle('New State')
@@ -61,6 +94,7 @@ class NewState(QDialog):
         self._init_widgets()
 
         self.setLayout(self.main_layout)
+
 
     #
     # Private methods
@@ -100,6 +134,7 @@ class NewState(QDialog):
         address_label.setText("Address")
 
         address_box = QLineEdit(self)
+        self._address_box = address_box
         address_box.setText(hex(self.instance.project.entry) if self._addr is None else hex(self._addr))
 
         def handle_address(_):
@@ -143,6 +178,9 @@ class NewState(QDialog):
             base_allowed = template_combo.currentData() in ('blank', 'call')
             base_state_combo.setHidden(not base_allowed)
             base_state_label.setHidden(not base_allowed)
+            args_allowed = template_combo.currentData() in ("entry",)
+            args_label.setHidden(not args_allowed)
+            args_edit.setHidden(not args_allowed)
 
         template_combo.currentIndexChanged.connect(handle_template)
 
@@ -162,6 +200,48 @@ class NewState(QDialog):
         layout.addWidget(base_state_combo, row, 1)
         row += 1
 
+        # args
+        args_label = QLabel(self)
+        args_label.setText('Args')
+
+        args_edit = QLineEdit(self)
+        self._args_edit = args_edit
+
+        def handle_args():
+            self._args = [self.instance.project.filename.encode() or b'dummy_filename']
+            for x in args_edit.text().split():
+                if len(x) > 2 and x[0] == "`" and x[-1] == "`":
+                    tmp = [symbol for symbol in self.instance.symbols if symbol.args[0].split('_')[0] == x[1:-1]]
+                    if len(tmp) == 1:
+                        self._args.append(tmp[0])
+                else:
+                    self._args.append(x.encode())
+
+        args_edit.editingFinished.connect(handle_args)
+
+        layout.addWidget(args_label, row, 0)
+        layout.addWidget(args_edit, row, 1)
+        row += 1
+
+        # fs_mount
+        fs_label = QLabel(self)
+        fs_label.setText('Filesystem')
+        fs_button = QPushButton(self)
+        fs_button.setText("Change")
+
+        layout.addWidget(fs_label, row, 0)
+        layout.addWidget(fs_button, row, 1)
+
+        def fs_edit_button():
+            fs_dialog = FilesystemMount(fs_config=self._fs_config, instance=self.instance, parent=self)
+            fs_dialog.exec_()
+            self._fs_config = fs_dialog.fs_config
+            fs_button.setText("{} Items".format(len(self._fs_config)))
+
+        fs_button.clicked.connect(fs_edit_button)
+
+        row += 1
+
         # mode
 
         mode_label = QLabel(self)
@@ -175,10 +255,13 @@ class NewState(QDialog):
         self._mode_combo = mode_combo
 
         def mode_changed():
+            if mode_combo.currentData() == "tracing":
+                TraceState(self.instance, self._base_state_combo, self._address_box)
             self._options.clear()
             self._options.update(angr.sim_options.modes[mode_combo.currentData()])
             for child in children_items:
                 child.setCheckState(0, Qt.Checked if child.text(0) in self._options else Qt.Unchecked)
+
         mode_combo.currentIndexChanged.connect(mode_changed)
         self._options.clear()
         self._options.update(angr.sim_options.modes[mode_combo.currentData()])
@@ -282,7 +365,7 @@ class NewState(QDialog):
                 elif template == 'call':
                     self.state = self.instance.project.factory.call_state(addr, mode=mode, options=self._options)
                 elif template == 'entry':
-                    self.state = self.instance.project.factory.entry_state(mode=mode, options=self._options)
+                    self.state = self.instance.project.factory.entry_state(mode=mode, options=self._options, args= self._args)
                 else:
                     self.state = self.instance.project.factory.full_init_state(mode=mode, options=self._options)
                 self.state.gui_data.base_name = name
@@ -290,6 +373,26 @@ class NewState(QDialog):
 
             self.state.gui_data.name = name
             self.state.gui_data.is_original = True
+
+
+            # TODO: there should prob be an am_event here
+            def attach_addr_annotation(state):
+                for i in range(len(state.solver.constraints)):
+                    if SrcAddrAnnotation not in [type(a) for a in state.solver.constraints[i].annotations]:
+                        state.solver.constraints[i] = \
+                                state.solver.constraints[i].annotate(SrcAddrAnnotation(state.addr))
+                return state
+
+            self.state.inspect.b(
+                event_type='constraints', when=angr.BP_AFTER, action=attach_addr_annotation)
+
+            # mount fs
+            if self._fs_config:
+                for path, real in self._fs_config:
+                    if os.path.isdir(real):
+                        fs = angr.SimHostFilesystem(real)
+                        fs.set_state(self.state)
+                        self.state.fs.mount(path, fs)
 
             if self._create_simgr:
                 self.instance.workspace.create_simulation_manager(self.state, name)

@@ -445,6 +445,11 @@ class GraphLayouter:
         # determine row ID for each node
         for node in ordered_nodes:
             # we want to push each node as far up as possible, unless it is the return node
+            # TODO: if address in unconstrained, choose a better fallback here
+            # TODO: hci: cleanup: Daniel to cleanup maybe
+            if not node.addr:
+                node.addr = node.get_state().history.addr
+               
             row = max_rows[node]
             self._rows[node] = row
             row_to_nodes[row].append(node)

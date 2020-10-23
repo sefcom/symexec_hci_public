@@ -12,6 +12,7 @@ from angrmanagement.daemon.client import DaemonClient
 from ..config import Conf
 from . import load_plugins_from_dir
 from .base_plugin import BasePlugin
+from ..ui.widgets.qoperand import QOperand
 
 if TYPE_CHECKING:
     from angrmanagement.ui.workspace import Workspace
@@ -166,17 +167,24 @@ class PluginManager:
     # Dispatchers
     #
 
-    def _dispatch(self, func, sensitive, *args):
+    def _fetch_active_plugin_funcs(self, base_func):
+        """Collect a list of functions from the active plugins corresponding to the base_func from BasePlugin."""
+        funcs = []
         for plugin in list(self.active_plugins):
-            custom = getattr(plugin, func.__name__)
-            if custom.__func__ is not func:
-                try:
-                    res = custom(*args)
-                except Exception as e:
-                    self._handle_error(plugin, func, sensitive, e)
-                else:
-                    yield res
+            custom = getattr(plugin, base_func.__name__)
+            if custom.__func__ is not base_func:
+                funcs.append((plugin, custom))
+        return funcs
 
+    def _dispatch(self, base_func, sensitive, *args):
+        """Execute the function corresponding to base_func in each active plugin"""
+        for plugin, f in self._fetch_active_plugin_funcs(base_func):
+            try:
+                res = f(*args)
+            except Exception as e:
+                self._handle_error(plugin, base_func, sensitive, e)
+            else:
+                yield res
         return None
 
     def _dispatch_single(self, plugin, func, sensitive, *args):
@@ -264,3 +272,30 @@ class PluginManager:
                     self.workspace.log("PLEASE FIX YOUR PLUGIN AHHHHHHHHHHHHHHHHH")
                     return 0, ''
         raise IndexError("Not enough columns")
+
+    def handle_click_op(self, qoperand: QOperand):
+        """See SampleViewer plugin for details"""
+        for _ in self._dispatch(BasePlugin.handle_click_op, True, qoperand):
+            pass
+
+    def _create_step_callback(self, base_callback):
+        """Collect a list of callback functions from each plugin. Return a new function that calls each callback in
+        successive order. Each callback function should take only one argument, the simulation manager.
+
+        This is useful in case plugins need to be notified prior/post executing a simulation manager step.
+        """
+        callbacks = [f for _, f in self._fetch_active_plugin_funcs(base_callback)]
+
+        def callback(simgr):
+            for f in callbacks:
+                f(simgr)
+
+        return callback
+
+    @property
+    def pre_step_callback(self):
+        return self._create_step_callback(BasePlugin.pre_step_callback)
+
+    @property
+    def post_step_callback(self):
+        return self._create_step_callback(BasePlugin.post_step_callback)

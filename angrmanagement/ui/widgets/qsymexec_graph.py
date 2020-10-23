@@ -6,7 +6,7 @@ from PySide2.QtCore import Qt, QPointF
 from ...utils.graph_layouter import GraphLayouter
 from .qgraph import QZoomableDraggableGraphicsView
 
-l = logging.getLogger('ui.widgets.qpg_graph')
+_l = logging.getLogger('ui.widgets.qpg_graph')
 
 
 class QSymExecGraph(QZoomableDraggableGraphicsView):
@@ -105,9 +105,15 @@ class QSymExecGraph(QZoomableDraggableGraphicsView):
 
     def _watch_state(self, **kwargs):
         for block in self.blocks:
-            if block.get_state() == self.state:
-                block.selected = True
-            else:
+            try:
+                # TODO: hci: cleanup: Daniel, maybe we should revert this? you committed in
+                #  da6a827277165052f167d0e2d21a5312aec29180 saying this was a crappy fix for something to do with the
+                #  pathtree. I commented out the pathtree and left a comment so maybe we shouldn't worry about pathtree
+                if block.get_state() == self.state:
+                    block.selected = True
+                else:
+                    block.selected = False
+            except:
                 block.selected = False
 
         self.viewport().update()

@@ -16,6 +16,10 @@ class QStateComboBox(QComboBox):
         for state in self.states:
             self.addItem(state.gui_data.name, state)
 
+    def refresh(self):
+        self.clear()
+        self._init_items()
+
     @property
     def state(self):
         idx = self.currentIndex()
