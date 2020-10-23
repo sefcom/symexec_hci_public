@@ -10,7 +10,7 @@ from PySide2.QtWidgets import QTableWidget, QDockWidget, QTableWidgetItem, QVBox
 
 from ..base_plugin import BasePlugin
 from ...ui.widgets.qoperand import QOperand
-from ...ui.widgets.qsimulation_manager_viewer import QSimulationManagerViewer
+from ...ui.widgets.qsimulation_manager_viewer import QSimulationManagerViewer, StateTreeItem
 
 l = logging.getLogger('plugins.state_disasm_viewer')
 l.setLevel("DEBUG")
@@ -50,6 +50,13 @@ class StateDisasmViewer(BasePlugin):
         viewer = QSimulationManagerViewer(curr_simgr)
         viewer.currentItemChanged.connect(self._on_state_selection)
         self.simgr_viewer = viewer
+
+        def _jump_to_state_address(item, column):
+            if not isinstance(item, StateTreeItem):
+                return
+            self.workspace.jump_to(item.state.addr)
+
+        viewer.itemDoubleClicked.connect(_jump_to_state_address)
 
         layout = self.layout
         layout.addWidget(viewer)

@@ -127,7 +127,8 @@ class QSimulationManagerViewer(QTreeWidget):
         self._init_widgets()
 
         self.simgr.am_subscribe(self.refresh)
-        self.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
 
     def _stash_to_selected_states(self):
         stash_to_states = defaultdict(list)
@@ -204,6 +205,17 @@ class QSimulationManagerViewer(QTreeWidget):
         return self.stash_tree_items[stash_name]
 
     def _init_widgets(self):
+        # save expanded state
+        expended_stash = {}
+        selected_state = set()
+        for topidx in range(self.topLevelItemCount()):
+            top = self.topLevelItem(topidx)
+            expended_stash[top.stash_name] = top.isExpanded()
+            for idx in range(top.childCount()):
+                item = top.child(idx)
+                if item.isSelected():
+                    selected_state.add(item.state)
+
         self.clear()
 
         if self.simgr.am_none():
@@ -216,3 +228,4 @@ class QSimulationManagerViewer(QTreeWidget):
             item = StashTreeItem(stash_name, simgr_viewer=self)
             self.stash_tree_items[stash_name] = item
             self.addTopLevelItem(item)
+            item.setExpanded(expended_stash.get(stash_name,False))

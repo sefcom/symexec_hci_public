@@ -154,6 +154,13 @@ class QSimulationManagers(QFrame):
         self._simgr_viewer = viewer
         viewer.itemClicked.connect(self._on_item_clicked)
 
+        def _jump_to_state_address(item, column):
+            if not isinstance(item, StateTreeItem):
+                return
+            self.instance.workspace.jump_to(item.state.addr)
+
+        viewer.itemDoubleClicked.connect(_jump_to_state_address)
+
         #
         # Max settings
         #
